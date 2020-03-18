@@ -6,11 +6,8 @@ library(shinythemes)
 library(tidycwl)
 library(tidyverse)
 library(readr)
-library(shinyFiles)
-library(yaml)
+library(shinyFiles) # This is for getting the file path of a file (maybe a later implementation of the app?)
 library(ymlthis)
-
-DF <- data.frame(Input = "", Type = "", Value = "") 
 
 # Global Functions ---------------------------------------------------------------------
 
@@ -132,7 +129,6 @@ ui <- fluidPage (
                       sidebarLayout(
                         sidebarPanel(
                           h4("Load CWL File"),
-                          p("Please upload a cwl file containing information about the desired inputs."),
                           uiOutput("sidebarGetCWLFile"),
                           width = 5  # width sidebar + width of main panel must equal 12 (5 + 7 = 12). Default is 4 & 6
                         ),
@@ -231,14 +227,29 @@ server <- function(input, output, session) {
     print(values$finalInputs)
     # If the user hasn't edited the input field on the CWL page, give them an opportunity to upload a file
     if(values$finalInputs == "inputs:\n\t"){
-      fileInput("cwlfile", "CWL File input:",
-                accept = ".cwl",
-                placeholder= "Find CWL files")
+      tagList(
+        p("Please upload a cwl file containing information about the desired inputs."),
+        fileInput("cwlfile", "CWL File input:",
+                  accept = ".cwl",
+                  placeholder= "Find CWL files")
+      )
+      
     } else{
-      # PICK UP HERE ON TUESDAY!!! Give them the choice - use radio buttons
+      radioButtons("uploadOrUsePreviousTab", "Would you rather upload another file or use the previous information?",
+                   choices = c("Upload New File" = "new", "Use Exising Inputs from previous tab" = "existing"), selected = NULL,
+                   inline = FALSE, width = "100%", choiceNames = NULL,
+                   choiceValues = NULL)
     }
   })
   
+  observeEvent(input$uploadOrUsePreviousTab, {
+    if(input$uploadOrUsePreviousTab == "new"){
+      # work here on Wednesday 
+      print("made it to new button")
+    }else{
+      print("made it to existing button")
+    }
+  })
   
   
   # Functionality for Importing a preexisting CWL file 
