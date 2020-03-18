@@ -5,7 +5,6 @@ library(shinycssloaders)
 library(shinythemes)
 library(tidycwl)
 library(tidyverse)
-library(readr)
 library(shinyFiles) # This is for getting the file path of a file (maybe a later implementation of the app?)
 library(ymlthis)
 
