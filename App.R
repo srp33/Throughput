@@ -64,24 +64,6 @@ parseDFToYaml <- function(OutputDF){
   return(FinalString)
 }
 
-# This function generates the string of inputs (based on users selection) for CWL File generation
-inputStringGenerator <- function(checkedInputList){
-  stringBuilder = ""
-  for(i in checkedInputList){
-    if(toString(i) == "fasta_dir"){
-      stringBuilder = paste0(stringBuilder, toString(i), ":\n\t\ttype: Directory\n\t")
-    } else if(toString(i) == "fasta_file1" | toString(i) == "fasta_file2"){
-      stringBuilder = paste0(stringBuilder, toString(i), ":\n\t\ttype: File\n\t")
-    } else if(toString(i) == "threads"){
-      stringBuilder = paste0(stringBuilder, toString(i), ":\n\t\ttype: int\n\t")
-    } else{
-      stringBuilder = paste0(stringBuilder, toString(i), ":\n\t\ttype: string\n\t")
-    }
-  }
-  stringBuilder <- trimws(stringBuilder, which = "right")
-  return(stringBuilder)
-}
-
 # User Interface ---------------------------------------------------------------------------
 ui <- fluidPage (
   navbarPage(id = "tabs", theme = shinytheme("sandstone"), title = "Throughput",
@@ -100,16 +82,21 @@ ui <- fluidPage (
                           p("Requirements"),
                           textInput("dockerImageID", "Docker Image Id:", width = "100%"),
                           textInput("dockerFileFROM", "Docker File FROM file:", width = "100%"),
-                          textInput("dockerFileRUN", "Docker File RUN Command:", width = "100%"),
+                          textInput("dockerFileRUN", "Docker Build Commands:", width = "100%"),
                           verbatimTextOutput("Requirements"),
-                          p("Arguements"),
+                          p("Arguments"),
                           textAreaInput("ExecutionScript", "Execution Script", width = "1000px", height = "250px"),
                           verbatimTextOutput("Arguments"),
                           p("Inputs"),
-                          checkboxGroupInput("inputType", "Input Type To Include:",
-                                             c("fasta_dir","fasta_prefix","fasta_extension","fasta_file1",
-                                               "fasta_file2","out_bam_file_name","threads")),
-                          verbatimTextOutput("Inputs"),
+                          fluidRow(
+                            column(width = 4, textInput("typeInputName", "Type in your Input Name")),
+                            column(width = 4, selectizeInput("inputTypeSelection", "Input Type Selection", choices = c("String", "Int", "Directory", "File"),
+                                                             options = list(placeholder = 'Please select an input type'))),
+                            column(width = 4, actionButton("addToInputList", "Add to Input List", style="color: #000000; background-color: #C8C7C2; border-color: #000000"))
+                          ),
+                          tags$style(type='text/css', "#addToInputList { width:100%; margin-top: 20px;}"),
+                          verbatimTextOutput("Inputs"), 
+                          actionButton("editInputList", "Edit This Input List",  style="color: #000000; background-color: #C8C7C2; border-color: #000000"), br(), br(),
                           p("Outputs"),
                           verbatimTextOutput("Outputs"),
                           hr(),
@@ -166,11 +153,40 @@ server <- function(input, output, session) {
                            RequirementsRUN = "\n\t\t\tRUN ",
                            RequirementsEnd = "\n\tInlineJavascriptRequirement: {}\n\tShellCommandRequirement: {}",
                            Arguments = "arguments:\n\t- shellQuote: false\n\tvalueFrom: >\n\t\t",
-                           Inputs = "inputs:\n\t",
+                           Inputs = "inputs:",
                            Outputs = "outputs:\n\texample_out:\ntype: stdout\nout_files:\ntype:\ntype: array\nitems: File\noutputBinding:\nglob:stdout: output.txt",
-                           finalRequirements = "", finalArguments = "", finalInputs = "", finalOutputs = "")
+                           finalRequirements = "", finalArguments = "", finalInputs = "", finalOutputs = "",
+                           namedListInputs = NULL)
   
-  
+  # This function dynamically generates the GenerateYML page
+  generateYMLValues <- function(namedList){
+    Types = tools::toTitleCase(namedList)
+    Names = tools::toTitleCase(names(namedList))
+    Values = rep("", length(Names))
+    
+    values[["DF"]] <- cbind(Names, Types, Values)
+    values$numRows = nrow(values[["DF"]])
+    values$types = Types
+    values$names = Names
+    values$userInput = rep("", values$numRows)
+    names(values$userInput) <- 1:values$numRows
+    
+    # This function embeds the UI for our module so it's dynamic
+    output$dynamicUIInputList <- renderUI({
+      tagList(
+        lapply(1:values$numRows, function(i) {
+          listOutputUI(values$names[i], values$types[i] )
+        }),
+        hr(),
+        h4("Save YML File"),
+        textInput("FileName", "Choose a Name for your File",
+                  width = "100%",
+                  placeholder = "Do not include a filetype and please don't have spaces"), br(),
+        div(style="text-align: right;",downloadButton("SaveYML", "Save as YML File"))
+      )
+    })
+    
+  }
   
   # GENERATE CWL FILE -----------------------------------------------------
   output$CWLStart <- renderText({ values$CWLFileStart })
@@ -185,12 +201,23 @@ server <- function(input, output, session) {
     values$finalArguments <- paste0(values$Arguments, input$ExecutionScript)
   })
   
+  observeEvent(input$addToInputList, {
+    if(!is.na(input$typeInputName) && !is.na(input$inputTypeSelection)){
+      # Add new input values to named list that will be used to automatically generate YML files
+      tempList <- c(input$inputTypeSelection)
+      names(tempList) <-input$typeInputName
+      values$namedListInputs <- c(values$namedListInputs, tempList)
+      # Save the new inputs to finalInputs to display it in the verbatim text output
+      values$finalInputs <- paste0(values$finalInputs, "\n\t",input$typeInputName, ":\n\t\tType: ", input$inputTypeSelection)
+    }
+  })
+  
   output$Inputs <- renderText({
-    values$finalInputs <- paste0(values$Inputs, inputStringGenerator(input$inputType))
+    paste0(values$Inputs, values$finalInputs)
   })
   
   output$Outputs <- renderText({
-    values$finalOutputs <- paste0(values$Outputs)
+    values$finalOutputs <- values$Outputs
   })
   
   output$downloadCWLFile <- downloadHandler(
@@ -223,9 +250,8 @@ server <- function(input, output, session) {
   # GENERATE YML FILE ----------------------------------------------------------------------------
   
   output$sidebarGetCWLFile <- renderUI({
-    print(values$finalInputs)
     # If the user hasn't edited the input field on the CWL page, give them an opportunity to upload a file
-    if(values$finalInputs == "inputs:\n\t"){
+    if(values$finalInputs == ""){
       tagList(
         p("Please upload a cwl file containing information about the desired inputs."),
         fileInput("cwlfile", "CWL File input:",
@@ -235,54 +261,33 @@ server <- function(input, output, session) {
       
     } else{
       radioButtons("uploadOrUsePreviousTab", "Would you rather upload another file or use the previous information?",
-                   choices = c("Upload New File" = "new", "Use Exising Inputs from previous tab" = "existing"), selected = NULL,
-                   inline = FALSE, width = "100%", choiceNames = NULL,
-                   choiceValues = NULL)
+                   choices = c("Upload New File" = "new", "Use Exising Inputs from previous tab" = "existing"), 
+                   selected = "existing", inline = FALSE, width = "100%",
+                   choiceNames = NULL, choiceValues = NULL)
     }
   })
   
   observeEvent(input$uploadOrUsePreviousTab, {
+    # If the user hasn't edited the input field on the CWL page, give them an opportunity to upload a file
     if(input$uploadOrUsePreviousTab == "new"){
-      # work here on Wednesday 
-      print("made it to new button")
+      output$sidebarGetCWLFile <- renderUI({
+          tagList(
+            radioButtons("uploadOrUsePreviousTab", "Would you rather upload another file or use the previous information?",
+                         choices = c("Upload New File" = "new", "Use Exising Inputs from previous tab" = "existing"),
+                         inline = FALSE, width = "100%", choiceNames = NULL, choiceValues = NULL),
+            p("Please upload a cwl file containing information about the desired inputs."),
+            fileInput("cwlfile", "CWL File input:", accept = ".cwl", placeholder= "Find CWL files")
+          )
+        })
     }else{
-      print("made it to existing button")
+      generateYMLValues(values$namedListInputs)
     }
   })
   
-  
-  # Functionality for Importing a preexisting CWL file 
+  # Functionality for importing a preexisting CWL file 
   observeEvent(input$cwlfile, ignoreInit = T, {
     fileInput <- read_cwl(input$cwlfile$datapath, format = "yaml")
-    
-    Types = tools::toTitleCase(unname(unlist(fileInput %>% parse_inputs())))
-    Names = tools::toTitleCase(names(fileInput$inputs))
-    Values = rep("", length(Names))
-    
-    # Set reactive variables that can be used to build the YML file
-    values[["DF"]] <- cbind(Names, Types, Values)
-    values$numRows = nrow(values[["DF"]])
-    values$types = Types
-    values$names = Names
-    values$userInput = rep("", values$numRows)
-    names(values$userInput) <- 1:values$numRows
-    
-    
-    # This function embeds the UI for our module so it's dynamic
-    output$dynamicUIInputList <- renderUI({
-      tagList(
-        lapply(1:values$numRows, function(i) {
-          listOutputUI(values$names[i], values$types[i] )
-        }),
-        hr(),
-        h4("Save YML File"),
-        textInput("FileName", "Choose a Name for your File",
-                  width = "100%",
-                  placeholder = "Do not include a filetype and please don't have spaces"), br(),
-        div(style="text-align: right;",downloadButton("SaveYML", "Save as YML File"))
-      )
-    })
-    
+    generateYMLValues(unlist(fileInput %>% parse_inputs()))
   })
   
   # This function will "CallModule" (which calls the server end of the module, using the same ID as the UI end)
