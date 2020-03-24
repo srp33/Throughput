@@ -1,6 +1,7 @@
 library(shiny)
 library(shinydashboard)
 library(shinyjs)
+library(shinyBS)
 library(shinycssloaders)
 library(shinythemes)
 library(tidycwl)
@@ -47,7 +48,7 @@ listOutputUI <- function(id, type){
   
 }
 
-# This function converts a Dataframe to a YML String
+# This function converts a Dataframe to a YML String (so it can save as a file)
 parseDFToYaml <- function(OutputDF){
   FinalString = ""
   count = 1
@@ -64,6 +65,11 @@ parseDFToYaml <- function(OutputDF){
   return(FinalString)
 }
 
+# This function codes for the help button icon that a user can hover over
+helpButton <- function(message = "content", placement = "right") {
+  return(tipify(icon("question-circle"), title = message, placement = placement, trigger = "hover"))
+}
+
 # User Interface ---------------------------------------------------------------------------
 ui <- fluidPage (
   navbarPage(id = "tabs", theme = shinytheme("sandstone"), title = "Throughput",
@@ -72,32 +78,40 @@ ui <- fluidPage (
                       sidebarLayout(
                         sidebarPanel(
                           HTML('<center><img src="Throughput.png" width=100%></center>'),
-                          h4("CWL File Generation"),
-                          p("Welcome to Throughput, an interface for helping generate CWL and YML files.")
+                          h4("Build your CWL File"),
+                          p("Welcome to Throughput, an interface for helping generate CWL and YML files."),
+                          p("A docker image is a read-only template for creating containers, 
+                            and provides a filesystem based on an ordered union of multiple layers of files and directories, which can be shared with other images and containers."),
+                          p("See https://windsock.io/explaining-docker-image-ids/")
                         ),
                         mainPanel(
-                          h4("Build your CWL File"),
-                          p("CWL File Header:"),
+                          h4("CWL File Header"), 
                           verbatimTextOutput("CWLStart"),
-                          p("Requirements"),
-                          textInput("dockerImageID", "Docker Image Id:", width = "100%"),
+                          br(),
+                          h4("Requirements"),
+                          textInput("dockerImageID",
+                                    label = div("Docker Image Id:", helpButton("The image id that will be used for docker run.")), 
+                                    width = "100%"),
                           textInput("dockerFileFROM", "Docker File FROM file:", width = "100%"),
                           textInput("dockerFileRUN", "Docker Build Commands:", width = "100%"),
                           verbatimTextOutput("Requirements"),
-                          p("Arguments"),
+                          br(),
+                          h4("Arguments"),
                           textAreaInput("ExecutionScript", "Execution Script", width = "1000px", height = "250px"),
                           verbatimTextOutput("Arguments"),
-                          p("Inputs"),
+                          br(),
+                          h4("Inputs"),
                           fluidRow(
-                            column(width = 4, textInput("typeInputName", "Type in your Input Name")),
-                            column(width = 4, selectizeInput("inputTypeSelection", "Input Type Selection", choices = c("String", "Int", "Directory", "File"),
+                            column(width = 4, textInput("typeInputName", "Input Name:")),
+                            column(width = 4, selectizeInput("inputTypeSelection", "Input Type Selection:", choices = c("String", "Int", "Directory", "File"),
                                                              options = list(placeholder = 'Please select an input type'))),
                             column(width = 4, actionButton("addToInputList", "Add to Input List", style="color: #000000; background-color: #C8C7C2; border-color: #000000"))
                           ),
                           tags$style(type='text/css', "#addToInputList { width:100%; margin-top: 20px;}"),
                           verbatimTextOutput("Inputs"), 
                           actionButton("editInputList", "Edit This Input List",  style="color: #000000; background-color: #C8C7C2; border-color: #000000"), br(), br(),
-                          p("Outputs"),
+                          br(),
+                          h4("Outputs"),
                           verbatimTextOutput("Outputs"),
                           hr(),
                           h4("Save CWL File"),
@@ -134,7 +148,7 @@ ui <- fluidPage (
                           HTML(paste('<div>For questions and comments, please visit', 
                                      '<a target="_blank", href="https://piccolo.byu.edu/Contact.aspx">https://piccolo.byu.edu/Contact.aspx</a>.',
                                      '<p>The source code for Throughput can be found at', 
-                                     '<a target="_blank", href="https://github.com/elizabethcook21/Throughput">https://github.com/elizabethcook21/Throughput</a>.</p></div>'))
+                                     '<a target="_blank", href="https://github.com/srp33/Throughput">https://github.com/srp33/Throughput</a>.</p></div>'))
                         )
                         
                       ))
@@ -212,6 +226,16 @@ server <- function(input, output, session) {
     }
   })
   
+  observeEvent(input$editInputList, {
+    showModal(modalDialog(
+      # Ask Dr. P's opinion on this section 
+      title = "Delete Rows from Input List",
+      lapply(1:length(values$namedListInputs), function(i) {
+        p(values$namedListInputs[i])
+      }),
+    ))
+  })
+  
   output$Inputs <- renderText({
     paste0(values$Inputs, values$finalInputs)
   })
@@ -260,8 +284,8 @@ server <- function(input, output, session) {
       )
       
     } else{
-      radioButtons("uploadOrUsePreviousTab", "Would you rather upload another file or use the previous information?",
-                   choices = c("Upload New File" = "new", "Use Exising Inputs from previous tab" = "existing"), 
+      radioButtons("uploadOrUsePreviousTab", "Would you rather upload another file or use the inputs from the CWL file that you just created in the previous tab?",
+                   choices = c("Upload new file" = "new", "Use exising inputs from previous tab" = "existing"), 
                    selected = "existing", inline = FALSE, width = "100%",
                    choiceNames = NULL, choiceValues = NULL)
     }
@@ -287,7 +311,13 @@ server <- function(input, output, session) {
   # Functionality for importing a preexisting CWL file 
   observeEvent(input$cwlfile, ignoreInit = T, {
     fileInput <- read_cwl(input$cwlfile$datapath, format = "yaml")
-    generateYMLValues(unlist(fileInput %>% parse_inputs()))
+    
+    # Parse the inputs from the file into a named vector. parse_inputs will just grab the type of input. "names" will grab the name of the input, then I combine the two values into the dataframe
+    inputsToParse <- unlist(fileInput %>% parse_inputs())
+    names(inputsToParse) <- names(fileInput$inputs)
+    
+    # Send this 
+    generateYMLValues(inputsToParse)
   })
   
   # This function will "CallModule" (which calls the server end of the module, using the same ID as the UI end)
@@ -358,7 +388,6 @@ server <- function(input, output, session) {
     content = function(file){
       OutputDF <- as_tibble(values[["DF"]])
       OutputDF$Values <- unname(values$userInput)
-      # TODO Let user pick file name
       use_yml_file(parseDFToYaml(OutputDF), file)
       showNotification(type = "message", ui = "Your file was successfully saved.")
     }
