@@ -48,6 +48,16 @@ listOutputUI <- function(id, type){
   
 }
 
+
+listInputUI <- function(name, type){
+  ns <- NS(name)
+  tagList(
+      textInput(name, label = NULL, placeholder = name),
+      selectizeInput(name, label = NULL, options = list(placeholder = type)),
+      hr()
+  )
+}
+
 # This function converts a Dataframe to a YML String (so it can save as a file)
 parseDFToYaml <- function(OutputDF){
   FinalString = ""
@@ -68,16 +78,17 @@ parseDFToYaml <- function(OutputDF){
 # This function codes for the help button icon that a user can hover over
 helpButton <- function(message = "content", placement = "right") {
   return(tipify(icon("question-circle"), title = message, placement = placement, trigger = "hover"))
+  #return(tipify(bsButton("pB2", icon("question-circle"), style = "inverse", size = "extra-small"), message))
 }
 
 # User Interface ---------------------------------------------------------------------------
 ui <- fluidPage (
-  navbarPage(id = "tabs", theme = shinytheme("sandstone"), title = "Throughput",
+  navbarPage(id = "tabs", title = "Throughput", theme = "sandstone.css",
              # CWL FILE UI
              tabPanel("CWL File Generation", 
                       sidebarLayout(
                         sidebarPanel(
-                          HTML('<center><img src="Throughput.png" width=100%></center>'),
+                          HTML('<center><img src="ThroughputLogo.png" width=100%></center>'),
                           h4("Build your CWL File"),
                           p("Welcome to Throughput, an interface for helping generate CWL and YML files."),
                           p("A docker image is a read-only template for creating containers, 
@@ -90,10 +101,14 @@ ui <- fluidPage (
                           br(),
                           h4("Requirements"),
                           textInput("dockerImageID",
-                                    label = div("Docker Image Id:", helpButton("The image id that will be used for docker run.")), 
+                                    label = div("Docker Image Id:", helpButton("The image id that will be used for docker run.  May be a human-readable image name or the image identifier hash.")), 
                                     width = "100%"),
-                          textInput("dockerFileFROM", "Docker File FROM file:", width = "100%"),
-                          textInput("dockerFileRUN", "Docker Build Commands:", width = "100%"),
+                          textInput("dockerFileFROM", 
+                                    label = div("Docker File FROM file:", helpButton("Add text later")),
+                                    width = "100%"),
+                          textInput("dockerFileRUN",
+                                    label = div("Docker Build Commands:", helpButton("Add text later")), 
+                                    width = "100%"),
                           verbatimTextOutput("Requirements"),
                           br(),
                           h4("Arguments"),
@@ -108,6 +123,7 @@ ui <- fluidPage (
                             column(width = 4, actionButton("addToInputList", "Add to Input List", style="color: #000000; background-color: #C8C7C2; border-color: #000000"))
                           ),
                           tags$style(type='text/css', "#addToInputList { width:100%; margin-top: 20px;}"),
+                          uiOutput("dynamicUIInputChangingList"),
                           verbatimTextOutput("Inputs"), 
                           actionButton("editInputList", "Edit This Input List",  style="color: #000000; background-color: #C8C7C2; border-color: #000000"), br(), br(),
                           br(),
@@ -319,6 +335,26 @@ server <- function(input, output, session) {
     # Send this 
     generateYMLValues(inputsToParse)
   })
+  
+  observe({
+    lapply(1:8, function(i) {
+      callModule(listInput, "InputType", "ListData")
+    })
+  })
+  
+  listInput <- function(input, output, session, modID){
+    
+  }
+  
+  output$dynamicUIInputChangingList <- renderUI({
+    tagList(
+      lapply(1:8, function(i) {
+        listInputUI("Hello", "Bob" )
+      }),
+      hr()
+    )
+  })
+  
   
   # This function will "CallModule" (which calls the server end of the module, using the same ID as the UI end)
   observe({
