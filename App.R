@@ -10,6 +10,7 @@ library(shinyFiles) # This is for getting the file path of a file (maybe a later
 library(ymlthis)
 
 # Global Functions ---------------------------------------------------------------------
+INPUT_TYPE_CHOICES = c("String", "Int", "Directory", "File")
 
 # This is a UI Module for text input
 listOutputUI <- function(id, type){
@@ -48,14 +49,45 @@ listOutputUI <- function(id, type){
   
 }
 
-
-listInputUI <- function(name, type){
+editInputUI <- function(name, type){
   ns <- NS(name)
   tagList(
-      textInput(name, label = NULL, placeholder = name),
-      selectizeInput(name, label = NULL, options = list(placeholder = type)),
-      hr()
+    fluidRow(
+      column(width = 4, textInput(name, label = NULL, value = name)),
+      column(width = 4, selectizeInput(name, label = NULL, choices = INPUT_TYPE_CHOICES, selected = type)),
+      column(width = 1, actionButton("DeleteInputRow", label = NULL, icon = icon("trash"), style="color: #000000; background-color: #C8C7C2; border-color: #000000"))
+    )
   )
+}
+
+# This function dynamically generates the GenerateYML page
+generateYMLValues <- function(namedList){
+  Types = tools::toTitleCase(namedList)
+  Names = tools::toTitleCase(names(namedList))
+  Values = rep("", length(Names))
+  
+  values[["DF"]] <- cbind(Names, Types, Values)
+  values$numRows = nrow(values[["DF"]])
+  values$types = Types
+  values$names = Names
+  values$userInput = rep("", values$numRows)
+  names(values$userInput) <- 1:values$numRows
+  
+  # This function embeds the UI for our module so it's dynamic
+  output$dynamicUIInputList <- renderUI({
+    tagList(
+      lapply(1:values$numRows, function(i) {
+        listOutputUI(values$names[i], values$types[i] )
+      }),
+      hr(),
+      h4("Save YML File"),
+      textInput("FileName", "Choose a Name for your File",
+                width = "100%",
+                placeholder = "Do not include a filetype and please don't have spaces"), br(),
+      div(style="text-align: right;",downloadButton("SaveYML", "Save as YML File"))
+    )
+  })
+  
 }
 
 # This function converts a Dataframe to a YML String (so it can save as a file)
@@ -78,13 +110,12 @@ parseDFToYaml <- function(OutputDF){
 # This function codes for the help button icon that a user can hover over
 helpButton <- function(message = "content", placement = "right") {
   return(tipify(icon("question-circle"), title = message, placement = placement, trigger = "hover"))
-  #return(tipify(bsButton("pB2", icon("question-circle"), style = "inverse", size = "extra-small"), message))
 }
 
 # User Interface ---------------------------------------------------------------------------
 ui <- fluidPage (
   navbarPage(id = "tabs", title = "Throughput", theme = "sandstone.css",
-             # CWL FILE UI
+             #CWL Generation UI 
              tabPanel("CWL File Generation", 
                       sidebarLayout(
                         sidebarPanel(
@@ -99,6 +130,8 @@ ui <- fluidPage (
                           h4("CWL File Header"), 
                           verbatimTextOutput("CWLStart"),
                           br(),
+                          
+                          # Requirements
                           h4("Requirements"),
                           textInput("dockerImageID",
                                     label = div("Docker Image Id:", helpButton("The image id that will be used for docker run.  May be a human-readable image name or the image identifier hash.")), 
@@ -111,22 +144,27 @@ ui <- fluidPage (
                                     width = "100%"),
                           verbatimTextOutput("Requirements"),
                           br(),
+                          
+                          # Arguments
                           h4("Arguments"),
                           textAreaInput("ExecutionScript", "Execution Script", width = "1000px", height = "250px"),
                           verbatimTextOutput("Arguments"),
                           br(),
+                          
+                          # Inputs
                           h4("Inputs"),
                           fluidRow(
-                            column(width = 4, textInput("typeInputName", "Input Name:")),
-                            column(width = 4, selectizeInput("inputTypeSelection", "Input Type Selection:", choices = c("String", "Int", "Directory", "File"),
+                            column(width = 4, textInput("typeInputName", "Add Input Name:")),
+                            column(width = 4, selectizeInput("inputTypeSelection", "Select Input Type:", choices = INPUT_TYPE_CHOICES,
                                                              options = list(placeholder = 'Please select an input type'))),
                             column(width = 4, actionButton("addToInputList", "Add to Input List", style="color: #000000; background-color: #C8C7C2; border-color: #000000"))
                           ),
                           tags$style(type='text/css', "#addToInputList { width:100%; margin-top: 20px;}"),
-                          uiOutput("dynamicUIInputChangingList"),
+                          uiOutput("editInputDynamicModule"),
                           verbatimTextOutput("Inputs"), 
-                          actionButton("editInputList", "Edit This Input List",  style="color: #000000; background-color: #C8C7C2; border-color: #000000"), br(), br(),
                           br(),
+                          
+                          # Outputs
                           h4("Outputs"),
                           verbatimTextOutput("Outputs"),
                           hr(),
@@ -184,39 +222,10 @@ server <- function(input, output, session) {
                            RequirementsEnd = "\n\tInlineJavascriptRequirement: {}\n\tShellCommandRequirement: {}",
                            Arguments = "arguments:\n\t- shellQuote: false\n\tvalueFrom: >\n\t\t",
                            Inputs = "inputs:",
+                           inputDF = data.frame(Name=character() , Type=character()),
                            Outputs = "outputs:\n\texample_out:\ntype: stdout\nout_files:\ntype:\ntype: array\nitems: File\noutputBinding:\nglob:stdout: output.txt",
                            finalRequirements = "", finalArguments = "", finalInputs = "", finalOutputs = "",
                            namedListInputs = NULL)
-  
-  # This function dynamically generates the GenerateYML page
-  generateYMLValues <- function(namedList){
-    Types = tools::toTitleCase(namedList)
-    Names = tools::toTitleCase(names(namedList))
-    Values = rep("", length(Names))
-    
-    values[["DF"]] <- cbind(Names, Types, Values)
-    values$numRows = nrow(values[["DF"]])
-    values$types = Types
-    values$names = Names
-    values$userInput = rep("", values$numRows)
-    names(values$userInput) <- 1:values$numRows
-    
-    # This function embeds the UI for our module so it's dynamic
-    output$dynamicUIInputList <- renderUI({
-      tagList(
-        lapply(1:values$numRows, function(i) {
-          listOutputUI(values$names[i], values$types[i] )
-        }),
-        hr(),
-        h4("Save YML File"),
-        textInput("FileName", "Choose a Name for your File",
-                  width = "100%",
-                  placeholder = "Do not include a filetype and please don't have spaces"), br(),
-        div(style="text-align: right;",downloadButton("SaveYML", "Save as YML File"))
-      )
-    })
-    
-  }
   
   # GENERATE CWL FILE -----------------------------------------------------
   output$CWLStart <- renderText({ values$CWLFileStart })
@@ -237,25 +246,39 @@ server <- function(input, output, session) {
       tempList <- c(input$inputTypeSelection)
       names(tempList) <-input$typeInputName
       values$namedListInputs <- c(values$namedListInputs, tempList)
+      
       # Save the new inputs to finalInputs to display it in the verbatim text output
+      values$inputDF <- rbind(values$inputDF, data.frame(Name = input$typeInputName, Type = input$inputTypeSelection))
       values$finalInputs <- paste0(values$finalInputs, "\n\t",input$typeInputName, ":\n\t\tType: ", input$inputTypeSelection)
+      
+      # Dynamic UI rendering for editable input list
+      output$editInputDynamicModule <- renderUI({
+        tagList(
+          p("Edit your input list:"),
+          lapply(1:nrow(values$inputDF), function(i) {
+            editInputUI(levels(droplevels(values$inputDF[i,1])), levels(droplevels(values$inputDF[i,2])))
+          })
+        )
+      })    
     }
-  })
-  
-  observeEvent(input$editInputList, {
-    showModal(modalDialog(
-      # Ask Dr. P's opinion on this section 
-      title = "Delete Rows from Input List",
-      lapply(1:length(values$namedListInputs), function(i) {
-        p(values$namedListInputs[i])
-      }),
-    ))
   })
   
   output$Inputs <- renderText({
     paste0(values$Inputs, values$finalInputs)
   })
   
+  # Code for Dynamic Input Module
+  observe({
+    lapply(1:nrow(values$inputDF), function(i) {
+      callModule(editInputListener, values$inputDF[i,1], i)
+    })
+  })
+  
+  editInputListener <- function(input, output, session, modID){
+    print("peace")
+  }
+  
+  # Output Listener
   output$Outputs <- renderText({
     values$finalOutputs <- values$Outputs
   })
@@ -335,26 +358,6 @@ server <- function(input, output, session) {
     # Send this 
     generateYMLValues(inputsToParse)
   })
-  
-  observe({
-    lapply(1:8, function(i) {
-      callModule(listInput, "InputType", "ListData")
-    })
-  })
-  
-  listInput <- function(input, output, session, modID){
-    
-  }
-  
-  output$dynamicUIInputChangingList <- renderUI({
-    tagList(
-      lapply(1:8, function(i) {
-        listInputUI("Hello", "Bob" )
-      }),
-      hr()
-    )
-  })
-  
   
   # This function will "CallModule" (which calls the server end of the module, using the same ID as the UI end)
   observe({
