@@ -60,36 +60,6 @@ editInputUI <- function(name, type){
   )
 }
 
-# This function dynamically generates the GenerateYML page
-generateYMLValues <- function(namedList){
-  Types = tools::toTitleCase(namedList)
-  Names = tools::toTitleCase(names(namedList))
-  Values = rep("", length(Names))
-  
-  values[["DF"]] <- cbind(Names, Types, Values)
-  values$numRows = nrow(values[["DF"]])
-  values$types = Types
-  values$names = Names
-  values$userInput = rep("", values$numRows)
-  names(values$userInput) <- 1:values$numRows
-  
-  # This function embeds the UI for our module so it's dynamic
-  output$dynamicUIInputList <- renderUI({
-    tagList(
-      lapply(1:values$numRows, function(i) {
-        listOutputUI(values$names[i], values$types[i] )
-      }),
-      hr(),
-      h4("Save YML File"),
-      textInput("FileName", "Choose a Name for your File",
-                width = "100%",
-                placeholder = "Do not include a filetype and please don't have spaces"), br(),
-      div(style="text-align: right;",downloadButton("SaveYML", "Save as YML File"))
-    )
-  })
-  
-}
-
 # This function converts a Dataframe to a YML String (so it can save as a file)
 parseDFToYaml <- function(OutputDF){
   FinalString = ""
@@ -226,6 +196,36 @@ server <- function(input, output, session) {
                            Outputs = "outputs:\n\texample_out:\ntype: stdout\nout_files:\ntype:\ntype: array\nitems: File\noutputBinding:\nglob:stdout: output.txt",
                            finalRequirements = "", finalArguments = "", finalInputs = "", finalOutputs = "",
                            namedListInputs = NULL)
+  
+  # This function dynamically generates the GenerateYML page (it needs to be in the server because it accesses the reactive values)
+  generateYMLValues <- function(namedList){
+    Types = tools::toTitleCase(namedList)
+    Names = tools::toTitleCase(names(namedList))
+    Values = rep("", length(Names))
+    
+    values[["DF"]] <- cbind(Names, Types, Values)
+    values$numRows = nrow(values[["DF"]])
+    values$types = Types
+    values$names = Names
+    values$userInput = rep("", values$numRows)
+    names(values$userInput) <- 1:values$numRows
+    
+    # This function embeds the UI for our module so it's dynamic
+    output$dynamicUIInputList <- renderUI({
+      tagList(
+        lapply(1:values$numRows, function(i) {
+          listOutputUI(values$names[i], values$types[i] )
+        }),
+        hr(),
+        h4("Save YML File"),
+        textInput("FileName", "Choose a Name for your File",
+                  width = "100%",
+                  placeholder = "Do not include a filetype and please don't have spaces"), br(),
+        div(style="text-align: right;",downloadButton("SaveYML", "Save as YML File"))
+      )
+    })
+    
+  }
   
   # GENERATE CWL FILE -----------------------------------------------------
   output$CWLStart <- renderText({ values$CWLFileStart })
