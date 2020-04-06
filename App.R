@@ -53,9 +53,9 @@ editInputUI <- function(name, type){
   ns <- NS(name)
   tagList(
     fluidRow(
-      column(width = 4, textInput(name, label = NULL, value = name)),
-      column(width = 4, selectizeInput(name, label = NULL, choices = INPUT_TYPE_CHOICES, selected = type)),
-      column(width = 1, actionButton("DeleteInputRow", label = NULL, icon = icon("trash"), style="color: #000000; background-color: #C8C7C2; border-color: #000000"))
+      column(width = 4, textInput(ns("textInput"), label = NULL, value = name)),
+      column(width = 4, selectizeInput(ns("selectCorrectInput"), label = NULL, choices = INPUT_TYPE_CHOICES, selected = type)),
+      column(width = 1, actionButton(ns("DeleteInputRow"), label = NULL, icon = icon("trash"), style="color: #000000; background-color: #C8C7C2; border-color: #000000"))
     )
   )
 }
@@ -80,6 +80,16 @@ parseDFToYaml <- function(OutputDF){
 # This function codes for the help button icon that a user can hover over
 helpButton <- function(message = "content", placement = "right") {
   return(tipify(icon("question-circle"), title = message, placement = placement, trigger = "hover"))
+}
+
+updateInputVerbatim <- function(DF){
+  newVerbatim = ""
+  if(nrow(DF) != 0){
+    for(row in 1:nrow(DF)){
+      newVerbatim <- paste0(newVerbatim, DF[row,1], ":\n\t\tType: ", DF[row,2], "\n\t")
+    }
+  }
+  return(newVerbatim)
 }
 
 # User Interface ---------------------------------------------------------------------------
@@ -192,10 +202,9 @@ server <- function(input, output, session) {
                            RequirementsEnd = "\n\tInlineJavascriptRequirement: {}\n\tShellCommandRequirement: {}",
                            Arguments = "arguments:\n\t- shellQuote: false\n\tvalueFrom: >\n\t\t",
                            Inputs = "inputs:",
-                           inputDF = data.frame(Name=character() , Type=character()),
+                           inputDF = data.frame(Name=as.character() , Type=as.character(), stringsAsFactors = FALSE),
                            Outputs = "outputs:\n\texample_out:\ntype: stdout\nout_files:\ntype:\ntype: array\nitems: File\noutputBinding:\nglob:stdout: output.txt",
-                           finalRequirements = "", finalArguments = "", finalInputs = "", finalOutputs = "",
-                           namedListInputs = NULL)
+                           finalRequirements = "", finalArguments = "", finalInputs = "", finalOutputs = "", deleteComplete = FALSE)
   
   # This function dynamically generates the GenerateYML page (it needs to be in the server because it accesses the reactive values)
   generateYMLValues <- function(namedList){
@@ -227,6 +236,17 @@ server <- function(input, output, session) {
     
   }
   
+  renderInputModule <- function(){
+    output$editInputDynamicModule <- renderUI({
+      tagList(
+        p("Edit your input list:"),
+        lapply(1:nrow(values$inputDF), function(i) {
+          editInputUI(values$inputDF[i,1], values$inputDF[i,2])
+        })
+      )
+    })    
+  }
+  
   # GENERATE CWL FILE -----------------------------------------------------
   output$CWLStart <- renderText({ values$CWLFileStart })
   
@@ -242,24 +262,14 @@ server <- function(input, output, session) {
   
   observeEvent(input$addToInputList, {
     if(!is.na(input$typeInputName) && !is.na(input$inputTypeSelection)){
-      # Add new input values to named list that will be used to automatically generate YML files
-      tempList <- c(input$inputTypeSelection)
-      names(tempList) <-input$typeInputName
-      values$namedListInputs <- c(values$namedListInputs, tempList)
-      
       # Save the new inputs to finalInputs to display it in the verbatim text output
-      values$inputDF <- rbind(values$inputDF, data.frame(Name = input$typeInputName, Type = input$inputTypeSelection))
-      values$finalInputs <- paste0(values$finalInputs, "\n\t",input$typeInputName, ":\n\t\tType: ", input$inputTypeSelection)
+      values$inputDF <- rbind(values$inputDF, data.frame(Name = input$typeInputName, Type = input$inputTypeSelection, stringsAsFactors = FALSE))
+      values$finalInputs <- paste0("\n\t", updateInputVerbatim(values$inputDF))
       
       # Dynamic UI rendering for editable input list
-      output$editInputDynamicModule <- renderUI({
-        tagList(
-          p("Edit your input list:"),
-          lapply(1:nrow(values$inputDF), function(i) {
-            editInputUI(levels(droplevels(values$inputDF[i,1])), levels(droplevels(values$inputDF[i,2])))
-          })
-        )
-      })    
+      if(nrow(values$inputDF) > 0){
+        renderInputModule()
+      }
     }
   })
   
@@ -269,13 +279,36 @@ server <- function(input, output, session) {
   
   # Code for Dynamic Input Module
   observe({
-    lapply(1:nrow(values$inputDF), function(i) {
-      callModule(editInputListener, values$inputDF[i,1], i)
-    })
+    if(nrow(values$inputDF) > 0){
+      lapply(1:nrow(values$inputDF), function(i) {
+        callModule(editInputListener, values$inputDF[i,1], i)
+      })
+    }
   })
   
   editInputListener <- function(input, output, session, modID){
-    print("peace")
+    observeEvent(input$DeleteInputRow ,{
+      browser()
+      values$inputDF <- values$inputDF[-c(modID), ]
+      # Delete the row from the verbatim
+      values$finalInputs <- paste0("\n\t", updateInputVerbatim(values$inputDF))
+      output$Inputs <- renderText({
+        paste0(values$Inputs, values$finalInputs)
+      })
+      # Stop the delete button from deleting anything else
+    })
+    
+    observeEvent(input$selectCorrectInput,{
+      updateSelectInput(session, "selectCorrectInput", selected = input$selectCorrectInput)
+      values$inputDF[modID,2] <- input$selectCorrectInput
+      values$finalInputs <- paste0("\n\t", updateInputVerbatim(values$inputDF))
+    })
+    
+    observeEvent(input$textInput,{
+      values$inputDF[modID,1] <- input$textInput
+      values$finalInputs <- paste0("\n\t", updateInputVerbatim(values$inputDF))
+    })
+
   }
   
   # Output Listener
@@ -343,7 +376,10 @@ server <- function(input, output, session) {
           )
         })
     }else{
-      generateYMLValues(values$namedListInputs)
+      # Convert input data frame to a named list
+      namedListFromDF <- as.character(values$inputDF[,2])
+      names(namedListFromDF) <- values$inputDF[,1]
+      generateYMLValues(namedListFromDF)
     }
   })
   
