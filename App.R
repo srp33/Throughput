@@ -22,23 +22,6 @@ listOutputUI <- function(id, type){
       numericInput(ns("numericText"),"Numeric Input", 10, width = '100%'),
       hr()
     )
-    # These are file and directory searches. They're an eventual addition to the app, but they are too slow (3/11/2020)
-  #} else if (type == "File") {
-  #  tagList(
-  #    h3(paste0("Input: ", id, sep = "")),
-  #    shinyFilesButton(ns("Btn_GetFile"), "Choose a file" , title = "Please select a file:", multiple = FALSE, 
-  #                     buttonType = "color: #fff; background-color: #337ab7; border-color: #2e6da4", class = NULL), br(), br(),
-  #    uiOutput(ns("txt_file")),
-  #    hr()
-  #  )
-  #} else if (type == "Directory"){
-  #  tagList(
-  #    h3(paste0("Input: ", id, sep = "")),
-  #    shinyDirButton(ns("Btn_GetDir"), "Choose a directory" , title = "Please select a directory:", 
-  #                     buttonType = "color: #fff; background-color: #337ab7; border-color: #2e6da4", class = NULL), br(), br(),
-  #    uiOutput(ns("txt_file")),
-  #    hr()
-  #  )
   } else {
     tagList(
       h3(paste0("Input: ", id, sep = "")),
@@ -55,7 +38,7 @@ editInputUI <- function(name, type){
     fluidRow(
       column(width = 4, textInput(ns("textInput"), label = NULL, value = name)),
       column(width = 4, selectizeInput(ns("selectCorrectInput"), label = NULL, choices = INPUT_TYPE_CHOICES, selected = type)),
-      column(width = 1, actionButton(ns("DeleteInputRow"), label = NULL, icon = icon("trash"), style="color: #000000; background-color: #C8C7C2; border-color: #000000"))
+      column(width = 1, actionButton(ns(paste0("DeleteInputRow", name)), label = NULL, icon = icon("trash"), style="color: #000000; background-color: #C8C7C2; border-color: #000000"))
     )
   )
 }
@@ -94,7 +77,8 @@ updateInputVerbatim <- function(DF){
 
 # User Interface ---------------------------------------------------------------------------
 ui <- fluidPage (
-  navbarPage(id = "tabs", title = "Throughput", theme = "sandstone.css",
+  useShinyjs(),
+  navbarPage(id = "tabs", title = "Throughput", theme = "sandstone.css",   
              #CWL Generation UI 
              tabPanel("CWL File Generation", 
                       sidebarLayout(
@@ -153,8 +137,7 @@ ui <- fluidPage (
                             then download the file you've made. After you've downloaded the file, a button will appear that will allow you to continue 
                             to the next tab and generate a YML file."),
                           textInput("CWLFileName", "CWL File Name:", width = "100%", placeholder = "Please input the name of your CWL File"),
-                          div(style="text-align: right;",downloadButton("downloadCWLFile", "Save as CWL File")),
-                          uiOutput("justContinue")
+                          div(style="text-align: right;",downloadButton("downloadCWLFile", "Save as CWL File"), disabled(actionButton("continueYML", "Continue")))
                         )
                         
                       )),
@@ -270,6 +253,8 @@ server <- function(input, output, session) {
       if(nrow(values$inputDF) > 0){
         renderInputModule()
       }
+      
+      updateTextInput(session, inputId = "typeInputName", value="")
     }
   })
   
@@ -287,15 +272,17 @@ server <- function(input, output, session) {
   })
   
   editInputListener <- function(input, output, session, modID){
-    observeEvent(input$DeleteInputRow ,{
-      browser()
-      values$inputDF <- values$inputDF[-c(modID), ]
-      # Delete the row from the verbatim
-      values$finalInputs <- paste0("\n\t", updateInputVerbatim(values$inputDF))
-      output$Inputs <- renderText({
-        paste0(values$Inputs, values$finalInputs)
-      })
-      # Stop the delete button from deleting anything else
+    deleteID <- paste0("DeleteInputRow", values$inputDF[modID,1])
+    observeEvent(input$deleteID ,{
+      if(input$DeleteInputRow > 0){
+        values$inputDF <- values$inputDF[-c(modID), ]
+        # Delete the row from the verbatim
+        values$finalInputs <- paste0("\n\t", updateInputVerbatim(values$inputDF))
+        output$Inputs <- renderText({
+          paste0(values$Inputs, values$finalInputs)
+        })
+        # Stop the delete button from deleting anything else
+      }
     })
     
     observeEvent(input$selectCorrectInput,{
@@ -330,16 +317,11 @@ server <- function(input, output, session) {
                             values$finalInputs, "\n",
                             values$finalOutputs)
       write(finalString, file)
-      output$justContinue <- renderUI({
-        tagList(
-          br(), 
-          div(style="text-align: right;",actionButton("continue", "Continue to YML"))
-        )
-      })
+      enable("continueYML")
     }
   )
   
-  observeEvent(input$continue, {
+  observeEvent(input$continueYML, {
     updateTabsetPanel(session, "tabs", selected = "YML File Creation")
   })
   
@@ -413,40 +395,6 @@ server <- function(input, output, session) {
     observeEvent(input$inputText,{
       values$userInput[modID] <- input$inputText
     })
-    
-    # These are file and directory searches. They're an eventual addition to the app, but they are too slow (3/11/2020)
-    # observe({
-    #   volumes = getVolumes()
-    #   shinyFileChoose(input, "Btn_GetFile", roots = volumes, session = session)
-    #   if(!is.null(input$Btn_GetFile)){
-    #     file_selected <-parseFilePaths(volumes, input$Btn_GetFile)
-    #     output$txt_file <- renderUI(
-    #       p(paste0("Selected File Path: ",as.character(file_selected$datapath), sep = "" ))
-    #     )
-    #     if (nrow(file_selected) != 0){
-    #       values$userInput <- c(file_selected$datapath, values$userInput)
-    #       print(values$userInput)
-    #     }
-    #   }
-    #   
-    # })
-    # 
-    # observe({
-    #   volumes = getVolumes()
-    #   shinyDirChoose(input, "Btn_GetDir", roots = volumes, session = session)
-    #   if(!is.null(input$Btn_GetDir)){
-    #     dir_selected <- parseDirPath(volumes, input$Btn_GetDir)
-    #     output$txt_file <- renderUI(
-    #       p(paste0("Selected Dir Path: ",dir_selected, sep = ""))
-    #     )
-    #     #if (nrow(dir_selected) != 0){
-    #     #  values$userInput <- c(dir_selected, values$userInput)
-    #     #  print(values$userInput)
-    #     #}
-    #   }
-    # })
-
-   
   }
   
   
