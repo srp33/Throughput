@@ -189,7 +189,7 @@ server <- function(input, output, session) {
                            inputDF = data.frame(Name=as.character() , Type=as.character(), stringsAsFactors = FALSE),
                            Outputs = "outputs:\n\texample_out:\ntype: stdout\nout_files:\ntype:\ntype: array\nitems: File\noutputBinding:\nglob:stdout: output.txt",
                            finalRequirements = "", finalArguments = "", finalInputs = "", finalOutputs = "", 
-                           deleteComplete = TRUE, countNumInputs = 0)
+                           deleteComplete = FALSE, countNumInputs = 0)
   
   # This function dynamically generates the GenerateYML page (it needs to be in the server because it accesses the reactive values)
   generateYMLValues <- function(namedList){
@@ -296,14 +296,14 @@ server <- function(input, output, session) {
     # OPTION 2
     observeEvent(input$deleteButton, {
       #browser()
-      if (values$deleteComplete != FALSE){
+      if (values$deleteComplete != TRUE){
         values$inputDF <- values$inputDF[!(row.names(values$inputDF)) %in% toString(modID), ]
         values$finalInputs <- paste0("\n\t", updateInputVerbatim(values$inputDF))
         output$Inputs <- renderText({
           paste0(values$Inputs, values$finalInputs)
         })
       }
-      values$deleteComplete = FALSE
+      values$deleteComplete = TRUE
       values$countNumInputs = values$countNumInputs + 1
       print(values$countNumInputs)
     })
@@ -312,7 +312,7 @@ server <- function(input, output, session) {
       if(values$countNumInputs == nrow(values$inputDF) -1 && values$deleteComplete == -1){
         #browser()
         print("new row")
-        values$deleteComplete = TRUE
+        values$deleteComplete = FALSE
         values$countNumInputs = 0
       }
     })
