@@ -11,6 +11,7 @@ library(ymlthis)
 
 # Global Functions ---------------------------------------------------------------------
 INPUT_TYPE_CHOICES = c("String", "Int", "Directory", "File")
+BUTTON_CLICK_COUNT = 0
 
 # This is a UI Module for text input
 listOutputUI <- function(id, type){
@@ -38,7 +39,7 @@ editInputUI <- function(name, type){
     fluidRow(
       column(width = 4, textInput(ns("textInput"), label = NULL, value = name)),
       column(width = 4, selectizeInput(ns("selectCorrectInput"), label = NULL, choices = INPUT_TYPE_CHOICES, selected = type)),
-      column(width = 1, actionButton(ns(paste0("DeleteInputRow", name)), label = NULL, icon = icon("trash"), style="color: #000000; background-color: #C8C7C2; border-color: #000000"))
+      column(width = 1, actionButton(ns("deleteButton"), label = NULL, icon = icon("trash"), style="color: #000000; background-color: #C8C7C2; border-color: #000000"))
     )
   )
 }
@@ -187,7 +188,8 @@ server <- function(input, output, session) {
                            Inputs = "inputs:",
                            inputDF = data.frame(Name=as.character() , Type=as.character(), stringsAsFactors = FALSE),
                            Outputs = "outputs:\n\texample_out:\ntype: stdout\nout_files:\ntype:\ntype: array\nitems: File\noutputBinding:\nglob:stdout: output.txt",
-                           finalRequirements = "", finalArguments = "", finalInputs = "", finalOutputs = "", deleteComplete = FALSE)
+                           finalRequirements = "", finalArguments = "", finalInputs = "", finalOutputs = "", 
+                           deleteComplete = 0, countNumInputs = 0)
   
   # This function dynamically generates the GenerateYML page (it needs to be in the server because it accesses the reactive values)
   generateYMLValues <- function(namedList){
@@ -248,7 +250,6 @@ server <- function(input, output, session) {
       # Save the new inputs to finalInputs to display it in the verbatim text output
       values$inputDF <- rbind(values$inputDF, data.frame(Name = input$typeInputName, Type = input$inputTypeSelection, stringsAsFactors = FALSE))
       values$finalInputs <- paste0("\n\t", updateInputVerbatim(values$inputDF))
-      
       # Dynamic UI rendering for editable input list
       if(nrow(values$inputDF) > 0){
         renderInputModule()
@@ -271,17 +272,48 @@ server <- function(input, output, session) {
     }
   })
   
+  # Listener for input module (includes listeners for all buttons in the module)
   editInputListener <- function(input, output, session, modID){
-    deleteID <- paste0("DeleteInputRow", values$inputDF[modID,1])
-    observeEvent(input$deleteID ,{
-      if(input$DeleteInputRow > 0){
-        values$inputDF <- values$inputDF[-c(modID), ]
-        # Delete the row from the verbatim
+
+    # OPTION 1
+    # deleteRow <- eventReactive(input$deleteButton ,{
+    #   # Delete the row from the inputDF table (the verbatim text)
+    #   if (values$deleteComplete == FALSE){
+    #     values$inputDF = values$inputDF[-c(modID),]
+    #     values$finalInputs <- paste0("\n\t", updateInputVerbatim(values$inputDF))
+    #     output$Inputs <- renderText({
+    #       paste0(values$Inputs, values$finalInputs)
+    #     })
+    #     values$deleteComplete = TRUE
+    #   }
+    #   # Stop the delete button from deleting anything else
+    # })
+    # 
+    # observeEvent(input$deleteButton, {
+    #   deleteRow()
+    # })
+    
+    # OPTION 2
+    observeEvent(input$deleteButton, {
+      browser()
+      if (values$deleteComplete != -1){
+        values$inputDF <- values$inputDF[!(row.names(values$inputDF)) %in% toString(modID), ]
         values$finalInputs <- paste0("\n\t", updateInputVerbatim(values$inputDF))
         output$Inputs <- renderText({
           paste0(values$Inputs, values$finalInputs)
         })
-        # Stop the delete button from deleting anything else
+      }
+      values$deleteComplete = -1
+      values$countNumInputs = values$countNumInputs + 1
+      print(values$countNumInputs)
+    })
+    
+    observe({
+      if(values$countNumInputs == nrow(values$inputDF) -1 && values$deleteComplete == -1){
+        browser()
+        print("new row")
+        values$deleteComplete = 0
+        values$countNumInputs = 0
       }
     })
     
