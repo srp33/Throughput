@@ -189,7 +189,7 @@ server <- function(input, output, session) {
                            inputDF = data.frame(Name=as.character() , Type=as.character(), stringsAsFactors = FALSE),
                            Outputs = "outputs:\n\texample_out:\ntype: stdout\nout_files:\ntype:\ntype: array\nitems: File\noutputBinding:\nglob:stdout: output.txt",
                            finalRequirements = "", finalArguments = "", finalInputs = "", finalOutputs = "", 
-                           deleteComplete = 0, countNumInputs = 0)
+                           deleteComplete = TRUE, countNumInputs = 0)
   
   # This function dynamically generates the GenerateYML page (it needs to be in the server because it accesses the reactive values)
   generateYMLValues <- function(namedList){
@@ -263,7 +263,7 @@ server <- function(input, output, session) {
     paste0(values$Inputs, values$finalInputs)
   })
   
-  # Code for Dynamic Input Module
+  # Code to call Dynamic Input Module and get listeners ready 
   observe({
     if(nrow(values$inputDF) > 0){
       lapply(1:nrow(values$inputDF), function(i) {
@@ -275,7 +275,7 @@ server <- function(input, output, session) {
   # Listener for input module (includes listeners for all buttons in the module)
   editInputListener <- function(input, output, session, modID){
 
-    # OPTION 1
+    # OPTION 1 - uses eventReactive
     # deleteRow <- eventReactive(input$deleteButton ,{
     #   # Delete the row from the inputDF table (the verbatim text)
     #   if (values$deleteComplete == FALSE){
@@ -295,34 +295,36 @@ server <- function(input, output, session) {
     
     # OPTION 2
     observeEvent(input$deleteButton, {
-      browser()
-      if (values$deleteComplete != -1){
+      #browser()
+      if (values$deleteComplete != FALSE){
         values$inputDF <- values$inputDF[!(row.names(values$inputDF)) %in% toString(modID), ]
         values$finalInputs <- paste0("\n\t", updateInputVerbatim(values$inputDF))
         output$Inputs <- renderText({
           paste0(values$Inputs, values$finalInputs)
         })
       }
-      values$deleteComplete = -1
+      values$deleteComplete = FALSE
       values$countNumInputs = values$countNumInputs + 1
       print(values$countNumInputs)
     })
     
     observe({
       if(values$countNumInputs == nrow(values$inputDF) -1 && values$deleteComplete == -1){
-        browser()
+        #browser()
         print("new row")
-        values$deleteComplete = 0
+        values$deleteComplete = TRUE
         values$countNumInputs = 0
       }
     })
     
+    # Observe changes to the drop down (on the input list)
     observeEvent(input$selectCorrectInput,{
       updateSelectInput(session, "selectCorrectInput", selected = input$selectCorrectInput)
       values$inputDF[modID,2] <- input$selectCorrectInput
       values$finalInputs <- paste0("\n\t", updateInputVerbatim(values$inputDF))
     })
     
+    # Observe changes to the text input (on the input list)
     observeEvent(input$textInput,{
       values$inputDF[modID,1] <- input$textInput
       values$finalInputs <- paste0("\n\t", updateInputVerbatim(values$inputDF))
